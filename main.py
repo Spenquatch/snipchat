@@ -27,20 +27,41 @@ class ScreenshotOverlay(QWidget):
     """Widget for selecting screen region with crosshair"""
     def __init__(self, parent=None):
         super().__init__(parent)
-        # Add Qt.X11BypassWindowManagerHint for better multi-monitor support
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.X11BypassWindowManagerHint)
+        # Set window flags for proper multi-monitor support
+        self.setWindowFlags(
+            Qt.FramelessWindowHint |
+            Qt.WindowStaysOnTopHint |
+            Qt.Tool |
+            Qt.WindowDoesNotAcceptFocus |
+            Qt.WindowSystemMenuHint  # Add this to help with multi-monitor
+        )
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_NoSystemBackground)
         self.setCursor(Qt.CrossCursor)
         
-        # Initialize screen info immediately
+        # Initialize screen info
         self.screen = QApplication.primaryScreen()
-        # Get the geometry of all screens combined
-        desktop = QApplication.desktop()
-        self.virtual_geometry = desktop.virtualGeometry()
-        # Set the widget geometry to cover all screens
-        self.setGeometry(self.virtual_geometry)
-        
+        self.update_geometry()
         self.reset_state()
+
+    def update_geometry(self):
+        """Update the overlay geometry to cover all screens using Win32 API"""
+        try:
+            # Get the virtual screen metrics
+            left = win32api.GetSystemMetrics(win32con.SM_XVIRTUALSCREEN)
+            top = win32api.GetSystemMetrics(win32con.SM_YVIRTUALSCREEN)
+            width = win32api.GetSystemMetrics(win32con.SM_CXVIRTUALSCREEN)
+            height = win32api.GetSystemMetrics(win32con.SM_CYVIRTUALSCREEN)
+            
+            # Create a rect that covers all monitors
+            self.virtual_geometry = QRect(left, top, width, height)
+            self.setGeometry(self.virtual_geometry)
+            
+        except Exception as e:
+            print(f"Error updating geometry: {e}")
+            # Fallback to primary screen if Win32 API fails
+            self.virtual_geometry = self.screen.geometry()
+            self.setGeometry(self.virtual_geometry)
 
     def reset_state(self):
         """Reset the overlay state"""
@@ -52,13 +73,12 @@ class ScreenshotOverlay(QWidget):
     def showFullScreen(self):
         """Override to ensure proper full screen on all monitors"""
         self.reset_state()
-        # Update virtual geometry to include all screens
-        desktop = QApplication.desktop()
-        self.virtual_geometry = desktop.virtualGeometry()
-        self.setGeometry(self.virtual_geometry)
+        self.update_geometry()
         super().showFullScreen()
-        # Ensure we're on top of everything
         self.raise_()
+        self.activateWindow()
+        # Force a repaint
+        self.repaint()
 
     def paintEvent(self, event):
         painter = QPainter(self)
